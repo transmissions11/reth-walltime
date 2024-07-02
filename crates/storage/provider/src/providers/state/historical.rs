@@ -308,8 +308,10 @@ impl<'b, TX: DbTx> StateProvider for HistoricalStateProviderRef<'b, TX> {
     }
 
     /// Get account and storage proofs.
-    fn proof(&self, _address: Address, _keys: &[B256]) -> ProviderResult<AccountProof> {
-        Err(ProviderError::StateRootNotAvailableForHistoricalBlock)
+    fn proof(&self, address: Address, keys: &[B256]) -> ProviderResult<AccountProof> {
+        Ok(Proof::new(self.tx)
+            .account_proof(address, keys)
+            .map_err(Into::<reth_db::DatabaseError>::into)?)
     }
 }
 
