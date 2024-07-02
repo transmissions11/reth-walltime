@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alloy_rlp::{Decodable, Encodable};
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -11,9 +9,8 @@ use reth_primitives::{
     B256, U256,
 };
 use reth_provider::{
-    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider,
-    HistoricalStateProviderRef, StateProvider, StateProviderFactory, StateRootProvider,
-    TransactionVariant,
+    BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, HeaderProvider, StateProvider,
+    StateProviderFactory, TransactionVariant,
 };
 use reth_revm::database::StateProviderDatabase;
 use reth_rpc_api::DebugApiServer;
@@ -29,9 +26,8 @@ use reth_rpc_types::{
     BlockError, Bundle, RichBlock, StateContext, TransactionRequest,
 };
 use reth_tasks::pool::BlockingTaskGuard;
-use reth_trie::{proof::Proof, HashedPostState};
 use revm::{
-    db::{states::bundle_state::BundleRetention, CacheDB, State},
+    db::CacheDB,
     primitives::{db::DatabaseCommit, BlockEnv, CfgEnvWithHandlerCfg, Env, EnvWithHandlerCfg},
 };
 use revm_inspectors::tracing::{
@@ -39,6 +35,7 @@ use revm_inspectors::tracing::{
     FourByteInspector, MuxInspector, TracingInspector, TracingInspectorConfig,
 };
 use revm_primitives::{keccak256, HashMap};
+use std::sync::Arc;
 use tokio::sync::{AcquireError, OwnedSemaphorePermit};
 
 /// `debug` API implementation.
@@ -584,11 +581,8 @@ where
                     .accounts
                     .into_iter()
                     .map(|(addr, db_acc)| {
-                        let storage_keys = db_acc
-                            .storage
-                            .into_iter()
-                            .map(|(storage_key, _)| storage_key.into())
-                            .collect::<Vec<_>>();
+                        let storage_keys =
+                            db_acc.storage.keys().copied().map(Into::into).collect::<Vec<_>>();
 
                         let account_proof = state.proof(addr, &storage_keys)?;
                         Ok(account_proof)
@@ -607,22 +601,23 @@ where
                 let mut witness = HashMap::with_capacity(total_nodes);
                 for proof in account_proofs {
                     // First, add all account proof nodes.
-                    for node in proof.proof.into_iter() {
+                    for node in proof.proof {
                         let hash = keccak256(node.as_ref());
                         witness.insert(hash, node);
                     }
 
                     // Next, add all storage proof nodes.
-                    for storage_proof in proof.storage_proofs.into_iter() {
-                        for node in storage_proof.proof.into_iter() {
+                    for storage_proof in proof.storage_proofs {
+                        for node in storage_proof.proof {
                             let hash = keccak256(node.as_ref());
                             witness.insert(hash, node);
                         }
                     }
                 }
 
-                // TODO: Also need blinded sibling nodes accessed during deletion, to allow for state root
-                // recomputation. As is, this is only sufficient for executing the block.
+                // TODO: Also need blinded sibling nodes accessed during deletion, to allow for
+                // state root recomputation. As is, this is only sufficient for
+                // executing the block.
                 Ok(witness)
             })
             .await
@@ -650,7 +645,7 @@ where
                     GethDebugBuiltInTracerType::FourByteTracer => {
                         let mut inspector = FourByteInspector::default();
                         let (res, _) = self.eth_api().inspect(db, env, &mut inspector)?;
-                        return Ok((FourByteFrame::from(inspector).into(), res.state))
+                        return Ok((FourByteFrame::from(inspector).into(), res.state));
                     }
                     GethDebugBuiltInTracerType::CallTracer => {
                         let call_config = tracer_config

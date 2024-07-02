@@ -2,7 +2,7 @@ use crate::{
     AccountReader, BlockHashReader, ExecutionDataProvider, StateProvider, StateRootProvider,
 };
 use reth_primitives::{Account, Address, BlockNumber, Bytecode, B256};
-use reth_storage_errors::provider::{ProviderError, ProviderResult};
+use reth_storage_errors::provider::ProviderResult;
 use reth_trie::{updates::TrieUpdates, AccountProof};
 use revm::db::BundleState;
 
@@ -108,7 +108,7 @@ impl<SP: StateProvider, EDP: ExecutionDataProvider> StateProvider for BundleStat
         self.state_provider.bytecode_by_hash(code_hash)
     }
 
-    fn proof(&self, _address: Address, _keys: &[B256]) -> ProviderResult<AccountProof> {
-        Err(ProviderError::StateRootNotAvailableForHistoricalBlock)
+    fn proof(&self, address: Address, keys: &[B256]) -> ProviderResult<AccountProof> {
+        self.state_provider.proof(address, keys)
     }
 }

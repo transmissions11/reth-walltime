@@ -14,7 +14,7 @@ use reth_primitives::{
     StorageValue, B256,
 };
 use reth_storage_errors::provider::ProviderResult;
-use reth_trie::{updates::TrieUpdates, AccountProof, HashedPostState};
+use reth_trie::{proof::Proof, updates::TrieUpdates, AccountProof, HashedPostState};
 use revm::db::BundleState;
 use std::fmt::Debug;
 
