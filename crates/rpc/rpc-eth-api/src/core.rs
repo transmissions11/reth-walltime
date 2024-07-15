@@ -23,7 +23,7 @@ use crate::helpers::{
 /// Network specific `eth` API types.
 pub trait EthApiTypes: Send + 'static {
     /// Extension of [`EthApiError`], with network specific errors.
-    type Error: ToRpcError + From<EthApiError>;
+    type Error: ToRpcError + From<EthApiError> + From<revm::primitives::InvalidTransaction>;
 }
 
 /// Helper trait, unifies functionality that must be supported to implement all RPC methods for
