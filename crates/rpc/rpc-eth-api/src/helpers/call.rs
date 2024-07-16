@@ -29,8 +29,6 @@ use reth_rpc_types::{
 };
 use revm::{Database, DatabaseCommit};
 use revm_inspectors::access_list::AccessListInspector;
-#[cfg(feature = "optimism")]
-use revm_primitives::OptimismFields;
 use tracing::trace;
 
 use crate::EthApiTypes;
@@ -855,6 +853,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             )?;
 
         let gas_limit = gas.unwrap_or_else(|| block_env.gas_limit.min(U256::from(u64::MAX)).to());
+
         let env = TxEnv {
             gas_limit: gas_limit
                 .try_into()
@@ -873,10 +872,8 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             blob_hashes: blob_versioned_hashes.unwrap_or_default(),
             max_fee_per_blob_gas,
             // EIP-7702 fields
-            authorization_list: None,
             // authorization_list: TODO
-            #[cfg(feature = "optimism")]
-            optimism: OptimismFields { enveloped_tx: Some(Bytes::new()), ..Default::default() },
+            ..Default::default()
         };
 
         Ok(env)
