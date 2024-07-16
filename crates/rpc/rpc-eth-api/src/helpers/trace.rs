@@ -13,7 +13,7 @@ use revm::{db::CacheDB, Database, DatabaseCommit, GetInspector, Inspector};
 use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
 use revm_primitives::{EnvWithHandlerCfg, EvmState, ExecutionResult, ResultAndState};
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::{Call, LoadBlock, LoadPendingBlock, LoadState, LoadTransaction};
 
@@ -57,7 +57,7 @@ pub trait Trace<T: EthApiTypes>: LoadState<T> {
         I: GetInspector<DB>,
     {
         let mut evm = self.evm_config().evm_with_env_and_inspector(db, env, inspector);
-        let res = evm.transact().map_err(Into::into)?;
+        let res = evm.transact().map_err(IntoEthApiError::into_err)?;
         let (db, env) = evm.into_db_and_env_with_handler_cfg();
         Ok((res, env, db))
     }

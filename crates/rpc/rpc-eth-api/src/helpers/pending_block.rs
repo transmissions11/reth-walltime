@@ -33,7 +33,7 @@ use revm::{db::states::bundle_state::BundleRetention, DatabaseCommit, State};
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::SpawnBlocking;
 
@@ -69,7 +69,7 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
     /// If no pending block is available, this will derive it from the `latest` block
     fn pending_block_env_and_cfg(&self) -> Result<PendingBlockEnv, T::Error> {
         let origin: PendingBlockEnvOrigin = if let Some(pending) =
-            self.provider().pending_block_with_senders().map_err(Into::into)?
+            self.provider().pending_block_with_senders().map_err(IntoEthApiError::into_err)?
         {
             PendingBlockEnvOrigin::ActualPending(pending)
         } else {
@@ -78,7 +78,7 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
             let latest = self
                 .provider()
                 .latest_header()
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .ok_or_else(|| EthApiError::UnknownBlockNumber)?;
 
             let (mut latest_header, block_hash) = latest.split();
@@ -114,7 +114,7 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
                 origin.header(),
                 self.evm_config().clone(),
             )
-            .map_err(Into::into)?;
+            .map_err(IntoEthApiError::into_err)?;
 
         Ok(PendingBlockEnv::new(cfg, block_env, origin))
     }
@@ -210,8 +210,10 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
         let PendingBlockEnv { cfg, block_env, origin } = env;
 
         let parent_hash = origin.build_target_hash();
-        let state_provider =
-            self.provider().history_by_block_hash(parent_hash).map_err(Into::into)?;
+        let state_provider = self
+            .provider()
+            .history_by_block_hash(parent_hash)
+            .map_err(IntoEthApiError::into_err)?;
         let state = StateProviderDatabase::new(state_provider);
         let mut db = State::builder().with_database(state).with_bundle_update().build();
 
@@ -326,7 +328,7 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
                         }
                         err => {
                             // this is an error that we should treat as fatal for this attempt
-                            return Err(<EVMError<_> as Into<EthApiError>>::into(err).into())
+                            return Err(err.into_err())
                         }
                     }
                 }
@@ -369,7 +371,7 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
         );
 
         // increment account balances for withdrawals
-        db.increment_balances(balance_increments).map_err(Into::into)?;
+        db.increment_balances(balance_increments).map_err(IntoEthApiError::into_err)?;
 
         // merge all transitions into bundle state.
         db.merge_transitions(BundleRetention::PlainState);
@@ -388,8 +390,9 @@ pub trait LoadPendingBlock<T: EthApiTypes> {
 
         // calculate the state root
         let state_provider = &db.database;
-        let state_root =
-            state_provider.state_root(execution_outcome.state()).map_err(Into::into)?;
+        let state_root = state_provider
+            .state_root(execution_outcome.state())
+            .map_err(IntoEthApiError::into_err)?;
 
         // create the block header
         let transactions_root = calculate_transaction_root(&executed_txs);

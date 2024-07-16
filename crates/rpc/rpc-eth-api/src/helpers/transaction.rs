@@ -24,7 +24,7 @@ use reth_rpc_types::{
 use reth_rpc_types_compat::transaction::from_recovered_with_block_context;
 use reth_transaction_pool::{TransactionOrigin, TransactionPool};
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::{
     Call, EthApiSpec, EthSigner, LoadBlock, LoadFee, LoadPendingBlock, LoadReceipt, SpawnBlocking,
@@ -88,7 +88,13 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
         &self,
         block: B256,
     ) -> impl Future<Output = Result<Option<Vec<TransactionSigned>>, T::Error>> + Send {
-        async move { Ok(self.cache().get_block_transactions(block).await.map_err(Into::into)?) }
+        async move {
+            Ok(self
+                .cache()
+                .get_block_transactions(block)
+                .await
+                .map_err(IntoEthApiError::into_err)?)
+        }
     }
 
     /// Returns the EIP-2718 encoded transaction by hash.
@@ -113,7 +119,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
             self.spawn_blocking_io(move |ref this| {
                 Ok(LoadTransaction::provider(this)
                     .transaction_by_hash(hash)
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .map(|tx| tx.envelope_encoded()))
             })
             .await
@@ -169,17 +175,19 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
         self.spawn_blocking_io(move |_| {
             let (tx, meta) = match LoadTransaction::provider(&this)
                 .transaction_by_hash_with_meta(hash)
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
             {
                 Some((tx, meta)) => (tx, meta),
                 None => return Ok(None),
             };
 
-            let receipt =
-                match EthTransactions::provider(&this).receipt_by_hash(hash).map_err(Into::into)? {
-                    Some(recpt) => recpt,
-                    None => return Ok(None),
-                };
+            let receipt = match EthTransactions::provider(&this)
+                .receipt_by_hash(hash)
+                .map_err(IntoEthApiError::into_err)?
+            {
+                Some(recpt) => recpt,
+                None => return Ok(None),
+            };
 
             Ok(Some((tx, meta, receipt)))
         })
@@ -264,7 +272,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
                 .pool()
                 .add_transaction(TransactionOrigin::Local, pool_transaction)
                 .await
-                .map_err(Into::into)?;
+                .map_err(IntoEthApiError::into_err)?;
 
             Ok(hash)
         }
@@ -282,13 +290,11 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
         async move {
             let from = match request.from {
                 Some(from) => from,
-                None => {
-                    return Err(<SignError as Into<EthApiError>>::into(SignError::NoAccount).into())
-                }
+                None => return Err(SignError::NoAccount.into_err()),
             };
 
             if self.find_signer(&from).is_err() {
-                return Err(<SignError as Into<EthApiError>>::into(SignError::NoAccount).into());
+                return Err(SignError::NoAccount.into_err());
             }
 
             // set nonce if not already set before
@@ -479,7 +485,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
             let hash = LoadTransaction::pool(self)
                 .add_transaction(TransactionOrigin::Local, pool_transaction)
                 .await
-                .map_err(Into::into)?;
+                .map_err(IntoEthApiError::into_err)?;
 
             Ok(hash)
         }
@@ -495,7 +501,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
             if signer.is_signer_for(from) {
                 return match signer.sign_transaction(request, from) {
                     Ok(tx) => Ok(tx),
-                    Err(e) => Err(<SignError as Into<EthApiError>>::into(e).into()),
+                    Err(e) => Err(e.into_err()),
                 }
             }
         }
@@ -513,7 +519,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
                 .find_signer(&account)?
                 .sign(account, &message)
                 .await
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .to_hex_bytes())
         }
     }
@@ -523,7 +529,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
         Ok(self
             .find_signer(&account)?
             .sign_typed_data(account, data)
-            .map_err(Into::into)?
+            .map_err(IntoEthApiError::into_err)?
             .to_hex_bytes())
     }
 
@@ -534,7 +540,7 @@ pub trait EthTransactions<T: EthApiTypes>: LoadTransaction<T> {
             .iter()
             .find(|signer| signer.is_signer_for(account))
             .map(|signer| dyn_clone::clone_box(&**signer))
-            .ok_or_else(|| <SignError as Into<EthApiError>>::into(SignError::NoAccount).into())
+            .ok_or_else(|| SignError::NoAccount.into_err())
     }
 }
 
@@ -575,7 +581,11 @@ pub trait LoadTransaction<T: EthApiTypes>: SpawnBlocking<T> {
             // Try to find the transaction on disk
             let mut resp = self
                 .spawn_blocking_io(move |this| {
-                    match this.provider().transaction_by_hash_with_meta(hash).map_err(Into::into)? {
+                    match this
+                        .provider()
+                        .transaction_by_hash_with_meta(hash)
+                        .map_err(IntoEthApiError::into_err)?
+                    {
                         None => Ok(None),
                         Some((tx, meta)) => {
                             // Note: we assume this transaction is valid, because it's mined (or
@@ -665,8 +675,11 @@ pub trait LoadTransaction<T: EthApiTypes>: SpawnBlocking<T> {
                 BlockId::Hash(hash) => hash.block_hash,
                 _ => return Ok(None),
             };
-            let block =
-                self.cache().get_block_with_senders(block_hash).await.map_err(Into::into)?;
+            let block = self
+                .cache()
+                .get_block_with_senders(block_hash)
+                .await
+                .map_err(IntoEthApiError::into_err)?;
             Ok(block.map(|block| (transaction, block.seal(block_hash))))
         }
     }

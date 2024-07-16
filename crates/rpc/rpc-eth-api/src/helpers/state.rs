@@ -15,7 +15,7 @@ use reth_transaction_pool::{PoolTransaction, TransactionPool};
 use revm::db::BundleState;
 use revm_primitives::{BlockEnv, CfgEnvWithHandlerCfg, SpecId};
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::{EthApiSpec, LoadPendingBlock, SpawnBlocking};
 
@@ -46,7 +46,7 @@ pub trait EthState<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             Ok(this
                 .state_at_block_id_or_latest(block_id)?
                 .account_code(address)
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .unwrap_or_default()
                 .original_bytes())
         })
@@ -62,7 +62,7 @@ pub trait EthState<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             Ok(this
                 .state_at_block_id_or_latest(block_id)?
                 .account_balance(address)
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .unwrap_or_default())
         })
     }
@@ -78,7 +78,7 @@ pub trait EthState<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             Ok(B256::new(
                 this.state_at_block_id_or_latest(block_id)?
                     .storage(address, index.0)
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .unwrap_or_default()
                     .to_be_bytes(),
             ))
@@ -95,14 +95,14 @@ pub trait EthState<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
     where
         Self: EthApiSpec,
     {
-        let chain_info = self.chain_info().map_err(Into::into)?;
+        let chain_info = self.chain_info().map_err(IntoEthApiError::into_err)?;
         let block_id = block_id.unwrap_or_default();
 
         // Check whether the distance to the block exceeds the maximum configured window.
         let block_number = self
             .provider()
             .block_number_for_id(block_id)
-            .map_err(Into::into)?
+            .map_err(IntoEthApiError::into_err)?
             .ok_or(EthApiError::UnknownBlockNumber)?;
         let max_window = self.max_proof_window();
         if chain_info.best_number.saturating_sub(block_number) > max_window {
@@ -119,7 +119,7 @@ pub trait EthState<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
                 let storage_keys = keys.iter().map(|key| key.0).collect::<Vec<_>>();
                 let proof = state
                     .proof(&BundleState::default(), address, &storage_keys)
-                    .map_err(Into::into)?;
+                    .map_err(IntoEthApiError::into_err)?;
                 Ok(from_primitive_account_proof(proof))
             })
             .await
@@ -148,7 +148,7 @@ pub trait LoadState<T: EthApiTypes> {
 
     /// Returns the state at the given block number
     fn state_at_hash(&self, block_hash: B256) -> Result<StateProviderBox, T::Error> {
-        Ok(self.provider().history_by_block_hash(block_hash).map_err(Into::into)?)
+        Ok(self.provider().history_by_block_hash(block_hash).map_err(IntoEthApiError::into_err)?)
     }
 
     /// Returns the state at the given [`BlockId`] enum.
@@ -156,12 +156,12 @@ pub trait LoadState<T: EthApiTypes> {
     /// Note: if not [`BlockNumberOrTag::Pending`](reth_primitives::BlockNumberOrTag) then this
     /// will only return canonical state. See also <https://github.com/paradigmxyz/reth/issues/4515>
     fn state_at_block_id(&self, at: BlockId) -> Result<StateProviderBox, T::Error> {
-        Ok(self.provider().state_by_block_id(at).map_err(Into::into)?)
+        Ok(self.provider().state_by_block_id(at).map_err(IntoEthApiError::into_err)?)
     }
 
     /// Returns the _latest_ state
     fn latest_state(&self) -> Result<StateProviderBox, T::Error> {
-        Ok(self.provider().latest().map_err(Into::into)?)
+        Ok(self.provider().latest().map_err(IntoEthApiError::into_err)?)
     }
 
     /// Returns the state at the given [`BlockId`] enum or the latest.
@@ -200,9 +200,13 @@ pub trait LoadState<T: EthApiTypes> {
                 // Use cached values if there is no pending block
                 let block_hash = LoadPendingBlock::provider(self)
                     .block_hash_for_id(at)
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .ok_or_else(|| EthApiError::UnknownBlockNumber)?;
-                let (cfg, env) = self.cache().get_evm_env(block_hash).await.map_err(Into::into)?;
+                let (cfg, env) = self
+                    .cache()
+                    .get_evm_env(block_hash)
+                    .await
+                    .map_err(IntoEthApiError::into_err)?;
                 Ok((cfg, env, block_hash.into()))
             }
         }
@@ -249,13 +253,18 @@ pub trait LoadState<T: EthApiTypes> {
                 {
                     let tx_count = highest_nonce
                         .checked_add(1)
-                        .ok_or(RpcInvalidTransactionError::NonceMaxValue.into())?;
+                        .ok_or(RpcInvalidTransactionError::NonceMaxValue.into_err())?;
                     return Ok(U256::from(tx_count))
                 }
             }
 
             let state = this.state_at_block_id_or_latest(block_id)?;
-            Ok(U256::from(state.account_nonce(address).map_err(Into::into)?.unwrap_or_default()))
+            Ok(U256::from(
+                state
+                    .account_nonce(address)
+                    .map_err(IntoEthApiError::into_err)?
+                    .unwrap_or_default(),
+            ))
         })
     }
 }

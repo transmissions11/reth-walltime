@@ -23,7 +23,47 @@ use crate::helpers::{
 /// Network specific `eth` API types.
 pub trait EthApiTypes: Send + 'static {
     /// Extension of [`EthApiError`], with network specific errors.
-    type Error: ToRpcError + From<EthApiError> + From<revm::primitives::InvalidTransaction>;
+    type Error: ToRpcError + FromEthApiError;
+}
+
+/// Helper trait to wrap core [`EthApiError`].
+pub trait FromEthApiError: From<EthApiError> {
+    /// Converts from error via [`EthApiError`].
+    fn from_err<E>(err: E) -> Self
+    where
+        EthApiError: From<E>;
+}
+
+impl<T> FromEthApiError for T
+where
+    T: From<EthApiError>,
+{
+    fn from_err<E>(err: E) -> Self
+    where
+        EthApiError: From<E>,
+    {
+        Into::<T>::into(Into::<EthApiError>::into(err))
+    }
+}
+
+/// Helper trait to wrap core [`EthApiError`].
+pub trait IntoEthApiError: Into<EthApiError> {
+    /// Converts into error via [`EthApiError`].
+    fn into_err<E>(self) -> E
+    where
+        E: FromEthApiError;
+}
+
+impl<T> IntoEthApiError for T
+where
+    T: Into<EthApiError>,
+{
+    fn into_err<E>(self) -> E
+    where
+        E: FromEthApiError,
+    {
+        Into::<E>::into(Into::<EthApiError>::into(self))
+    }
 }
 
 /// Helper trait, unifies functionality that must be supported to implement all RPC methods for

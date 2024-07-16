@@ -10,7 +10,7 @@ use reth_rpc_eth_types::{
 use reth_rpc_types::{BlockNumberOrTag, FeeHistory};
 use tracing::debug;
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::LoadBlock;
 
@@ -76,7 +76,7 @@ pub trait EthFees<T: EthApiTypes>: LoadFee<T> {
 
             let Some(end_block) = LoadFee::provider(self)
                 .block_number_for_id(newest_block.into())
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
             else {
                 return Err(EthApiError::UnknownBlockNumber.into())
             };
@@ -147,7 +147,7 @@ pub trait EthFees<T: EthApiTypes>: LoadFee<T> {
                 base_fee_per_blob_gas.push(last_entry.next_block_blob_fee().unwrap_or_default());
             } else {
             // read the requested header range
-            let headers = LoadFee::provider(self).sealed_headers_range(start_block..=end_block).map_err(Into::into)?;
+            let headers = LoadFee::provider(self).sealed_headers_range(start_block..=end_block).map_err(IntoEthApiError::into_err)?;
             if headers.len() != block_count as usize {
                 return Err(EthApiError::InvalidBlockRange.into())
             }
@@ -165,7 +165,7 @@ pub trait EthFees<T: EthApiTypes>: LoadFee<T> {
                 if let Some(percentiles) = &reward_percentiles {
                     let (transactions, receipts) = LoadFee::cache(self)
                         .get_transactions_and_receipts(header.hash())
-                        .await.map_err(Into::into)?
+                        .await.map_err(IntoEthApiError::into_err)?
                         .ok_or(EthApiError::InvalidBlockRange)?;
                     rewards.push(
                         calculate_reward_percentiles_for_block(
@@ -344,6 +344,6 @@ pub trait LoadFee<T: EthApiTypes>: LoadBlock<T> {
     where
         Self: 'static,
     {
-        async move { self.gas_oracle().suggest_tip_cap().await.map_err(Into::into) }
+        async move { self.gas_oracle().suggest_tip_cap().await.map_err(IntoEthApiError::into_err) }
     }
 }

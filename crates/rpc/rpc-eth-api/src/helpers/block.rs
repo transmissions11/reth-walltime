@@ -9,7 +9,7 @@ use reth_rpc_eth_types::{EthApiError, EthStateCache, ReceiptBuilder};
 use reth_rpc_types::{AnyTransactionReceipt, Header, Index, RichBlock};
 use reth_rpc_types_compat::block::{from_block, uncle_block_from_header};
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::{LoadPendingBlock, LoadReceipt, SpawnBlocking};
 
@@ -52,10 +52,10 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
             let block_hash = block.hash();
             let total_difficulty = EthBlocks::provider(self)
                 .header_td_by_number(block.number)
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .ok_or(EthApiError::UnknownBlockNumber)?;
             let block = from_block(block.unseal(), total_difficulty, full.into(), Some(block_hash))
-                .map_err(Into::into)?;
+                .map_err(IntoEthApiError::into_err)?;
             Ok(Some(block.into()))
         }
     }
@@ -72,21 +72,23 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
                 // Pending block can be fetched directly without need for caching
                 return Ok(LoadBlock::provider(self)
                     .pending_block()
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .map(|block| block.body.len()))
             }
 
-            let block_hash =
-                match LoadBlock::provider(self).block_hash_for_id(block_id).map_err(Into::into)? {
-                    Some(block_hash) => block_hash,
-                    None => return Ok(None),
-                };
+            let block_hash = match LoadBlock::provider(self)
+                .block_hash_for_id(block_id)
+                .map_err(IntoEthApiError::into_err)?
+            {
+                Some(block_hash) => block_hash,
+                None => return Ok(None),
+            };
 
             Ok(self
                 .cache()
                 .get_block_transactions(block_hash)
                 .await
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
                 .map(|txs| txs.len()))
         }
     }
@@ -128,7 +130,7 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
 
                         ReceiptBuilder::new(&tx, meta, receipt, &receipts)
                             .map(|builder| builder.build())
-                            .map_err(Into::into)
+                            .map_err(IntoEthApiError::into_err)
                     })
                     .collect::<Result<Vec<_>, T::Error>>();
                 return receipts.map(Some)
@@ -150,17 +152,18 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
             if block_id.is_pending() {
                 return Ok(LoadBlock::provider(self)
                     .pending_block_and_receipts()
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .map(|(sb, receipts)| (sb, Arc::new(receipts))))
             }
 
-            if let Some(block_hash) =
-                LoadBlock::provider(self).block_hash_for_id(block_id).map_err(Into::into)?
+            if let Some(block_hash) = LoadBlock::provider(self)
+                .block_hash_for_id(block_id)
+                .map_err(IntoEthApiError::into_err)?
             {
                 return Ok(LoadReceipt::cache(self)
                     .get_block_and_receipts(block_hash)
                     .await
-                    .map_err(Into::into)?)
+                    .map_err(IntoEthApiError::into_err)?)
             }
 
             Ok(None)
@@ -171,7 +174,7 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
     ///
     /// Returns an empty vec if there are none.
     fn ommers(&self, block_id: BlockId) -> Result<Option<Vec<reth_primitives::Header>>, T::Error> {
-        Ok(LoadBlock::provider(self).ommers_by_id(block_id).map_err(Into::into)?)
+        Ok(LoadBlock::provider(self).ommers_by_id(block_id).map_err(IntoEthApiError::into_err)?)
     }
 
     /// Returns uncle block at given index in given block.
@@ -187,10 +190,12 @@ pub trait EthBlocks<T: EthApiTypes>: LoadBlock<T> {
                 // Pending block can be fetched directly without need for caching
                 LoadBlock::provider(self)
                     .pending_block()
-                    .map_err(Into::into)?
+                    .map_err(IntoEthApiError::into_err)?
                     .map(|block| block.ommers)
             } else {
-                LoadBlock::provider(self).ommers_by_id(block_id).map_err(Into::into)?
+                LoadBlock::provider(self)
+                    .ommers_by_id(block_id)
+                    .map_err(IntoEthApiError::into_err)?
             }
             .unwrap_or_default();
 
@@ -238,7 +243,7 @@ pub trait LoadBlock<T: EthApiTypes>: LoadPendingBlock<T> + SpawnBlocking<T> {
                 // Pending block can be fetched directly without need for caching
                 let maybe_pending = LoadPendingBlock::provider(self)
                     .pending_block_with_senders()
-                    .map_err(Into::into)?;
+                    .map_err(IntoEthApiError::into_err)?;
                 return if maybe_pending.is_some() {
                     Ok(maybe_pending)
                 } else {
@@ -248,13 +253,17 @@ pub trait LoadBlock<T: EthApiTypes>: LoadPendingBlock<T> + SpawnBlocking<T> {
 
             let block_hash = match LoadPendingBlock::provider(self)
                 .block_hash_for_id(block_id)
-                .map_err(Into::into)?
+                .map_err(IntoEthApiError::into_err)?
             {
                 Some(block_hash) => block_hash,
                 None => return Ok(None),
             };
 
-            Ok(self.cache().get_sealed_block_with_senders(block_hash).await.map_err(Into::into)?)
+            Ok(self
+                .cache()
+                .get_sealed_block_with_senders(block_hash)
+                .await
+                .map_err(IntoEthApiError::into_err)?)
         }
     }
 }

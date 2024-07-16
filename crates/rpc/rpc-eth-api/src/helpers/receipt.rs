@@ -6,7 +6,7 @@ use reth_primitives::{Receipt, TransactionMeta, TransactionSigned};
 use reth_rpc_eth_types::{EthApiError, EthStateCache, ReceiptBuilder};
 use reth_rpc_types::AnyTransactionReceipt;
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 /// Assembles transaction receipt data w.r.t to network.
 ///
@@ -27,11 +27,15 @@ pub trait LoadReceipt<T: EthApiTypes>: Send + Sync {
     ) -> impl Future<Output = Result<AnyTransactionReceipt, T::Error>> + Send {
         async move {
             // get all receipts for the block
-            let all_receipts =
-                match self.cache().get_receipts(meta.block_hash).await.map_err(Into::into)? {
-                    Some(recpts) => recpts,
-                    None => return Err(EthApiError::UnknownBlockNumber.into()),
-                };
+            let all_receipts = match self
+                .cache()
+                .get_receipts(meta.block_hash)
+                .await
+                .map_err(IntoEthApiError::into_err)?
+            {
+                Some(recpts) => recpts,
+                None => return Err(EthApiError::UnknownBlockNumber.into()),
+            };
 
             Ok(ReceiptBuilder::new(&tx, meta, &receipt, &all_receipts)?.build())
         }

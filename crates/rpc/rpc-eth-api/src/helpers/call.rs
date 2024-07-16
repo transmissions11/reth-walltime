@@ -31,7 +31,7 @@ use revm::{Database, DatabaseCommit};
 use revm_inspectors::access_list::AccessListInspector;
 use tracing::trace;
 
-use crate::EthApiTypes;
+use crate::{EthApiTypes, IntoEthApiError};
 
 use super::{LoadBlock, LoadPendingBlock, LoadState, LoadTransaction, SpawnBlocking, Trace};
 
@@ -59,7 +59,7 @@ pub trait EthCall<T: EthApiTypes>: Call<T> + LoadPendingBlock<T> {
             let (res, _env) =
                 self.transact_call_at(request, block_number.unwrap_or_default(), overrides).await?;
 
-            ensure_success(res.result).map_err(Into::into)
+            ensure_success(res.result).map_err(IntoEthApiError::into_err)
         }
     }
 
@@ -127,7 +127,8 @@ pub trait EthCall<T: EthApiTypes>: Call<T> + LoadPendingBlock<T> {
                             block_env.clone(),
                             Call::evm_config(&this).tx_env(&tx),
                         );
-                        let (res, _) = this.transact(&mut db, env).map_err(Into::into)?;
+                        let (res, _) =
+                            this.transact(&mut db, env).map_err(IntoEthApiError::into_err)?;
                         db.commit(res.state);
                     }
                 }
@@ -150,7 +151,7 @@ pub trait EthCall<T: EthApiTypes>: Call<T> + LoadPendingBlock<T> {
                             overrides,
                         )
                         .map(Into::into)?;
-                    let (res, _) = this.transact(&mut db, env).map_err(Into::into)?;
+                    let (res, _) = this.transact(&mut db, env).map_err(Into::<T::Error>::into)?;
 
                     match ensure_success(res.result) {
                         Ok(output) => {
@@ -234,7 +235,8 @@ pub trait EthCall<T: EthApiTypes>: Call<T> + LoadPendingBlock<T> {
         let to = if let Some(TxKind::Call(to)) = request.to {
             to
         } else {
-            let nonce = db.basic_ref(from).map_err(Into::into)?.unwrap_or_default().nonce;
+            let nonce =
+                db.basic_ref(from).map_err(IntoEthApiError::into_err)?.unwrap_or_default().nonce;
             from.create(nonce)
         };
 
@@ -255,7 +257,7 @@ pub trait EthCall<T: EthApiTypes>: Call<T> + LoadPendingBlock<T> {
             }
             ExecutionResult::Success { .. } => Ok(()),
         }
-        .map_err(Into::into)?;
+        .map_err(IntoEthApiError::into_err)?;
 
         let access_list = inspector.into_access_list();
 
@@ -321,7 +323,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
     {
         let this = self.clone();
         self.spawn_with_call_at(request, at, overrides, move |db, env| {
-            this.transact(db, env).map_err(Into::into)
+            this.transact(db, env).map_err(IntoEthApiError::into_err)
         })
     }
 
@@ -544,7 +546,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
 
         // Apply any state overrides if specified.
         if let Some(state_override) = state_override {
-            apply_state_overrides(state_override, &mut db).map_err(Into::into)?;
+            apply_state_overrides(state_override, &mut db).map_err(IntoEthApiError::into_err)?;
         }
 
         // Optimize for simple transfer transactions, potentially reducing the gas estimate.
@@ -575,8 +577,8 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
         // The caller allowance is check by doing `(account.balance - tx.value) / tx.gas_price`
         if env.tx.gas_price > U256::ZERO {
             // cap the highest gas limit by max gas caller can afford with given gas price
-            highest_gas_limit =
-                highest_gas_limit.min(caller_gas_allowance(&mut db, &env.tx).map_err(Into::into)?);
+            highest_gas_limit = highest_gas_limit
+                .min(caller_gas_allowance(&mut db, &env.tx).map_err(IntoEthApiError::into_err)?);
         }
 
         // We can now normalize the highest gas limit to a u64
@@ -608,10 +610,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             ExecutionResult::Halt { reason, gas_used } => {
                 // here we don't check for invalid opcode because already executed with highest gas
                 // limit
-                return Err(<RpcInvalidTransactionError as Into<EthApiError>>::into(
-                    RpcInvalidTransactionError::halt(reason, gas_used),
-                )
-                .into())
+                return Err(RpcInvalidTransactionError::halt(reason, gas_used).into_err())
             }
             ExecutionResult::Revert { output, .. } => {
                 // if price or limit was included in the request then we can execute the request
@@ -620,10 +619,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
                     Err(self.map_out_of_gas_err(block_env_gas_limit, env, &mut db))
                 } else {
                     // the transaction did revert
-                    Err(<RpcInvalidTransactionError as Into<EthApiError>>::into(
-                        RpcInvalidTransactionError::Revert(RevertError::new(output)),
-                    )
-                    .into())
+                    Err(RpcInvalidTransactionError::Revert(RevertError::new(output)).into_err())
                 }
             }
         };
@@ -751,10 +747,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
                         // These cases should be unreachable because we know the transaction
                         // succeeds, but if they occur, treat them as an
                         // error.
-                        return Err(<RpcInvalidTransactionError as Into<EthApiError>>::into(
-                            RpcInvalidTransactionError::EvmHalt(err),
-                        )
-                        .into())
+                        return Err(RpcInvalidTransactionError::EvmHalt(err).into_err())
                     }
                 }
             }
@@ -785,23 +778,14 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             ExecutionResult::Success { .. } => {
                 // transaction succeeded by manually increasing the gas limit to
                 // highest, which means the caller lacks funds to pay for the tx
-                <RpcInvalidTransactionError as Into<EthApiError>>::into(
-                    RpcInvalidTransactionError::BasicOutOfGas(req_gas_limit),
-                )
-                .into()
+                RpcInvalidTransactionError::BasicOutOfGas(req_gas_limit).into_err()
             }
             ExecutionResult::Revert { output, .. } => {
                 // reverted again after bumping the limit
-                <RpcInvalidTransactionError as Into<EthApiError>>::into(
-                    RpcInvalidTransactionError::Revert(RevertError::new(output)),
-                )
-                .into()
+                RpcInvalidTransactionError::Revert(RevertError::new(output)).into_err()
             }
             ExecutionResult::Halt { reason, .. } => {
-                <RpcInvalidTransactionError as Into<EthApiError>>::into(
-                    RpcInvalidTransactionError::EvmHalt(reason),
-                )
-                .into()
+                RpcInvalidTransactionError::EvmHalt(reason).into_err()
             }
         }
     }
@@ -817,10 +801,7 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
     ) -> Result<TxEnv, T::Error> {
         // Ensure that if versioned hashes are set, they're not empty
         if request.blob_versioned_hashes.as_ref().map_or(false, |hashes| hashes.is_empty()) {
-            return Err(<RpcInvalidTransactionError as Into<EthApiError>>::into(
-                RpcInvalidTransactionError::BlobTransactionMissingBlobHashes,
-            )
-            .into())
+            return Err(RpcInvalidTransactionError::BlobTransactionMissingBlobHashes.into_err())
         }
 
         let TransactionRequest {
@@ -858,14 +839,17 @@ pub trait Call<T: EthApiTypes>: LoadState<T> + SpawnBlocking<T> {
             gas_limit: gas_limit
                 .try_into()
                 .map_err(|_| RpcInvalidTransactionError::GasUintOverflow)
-                .map_err(Into::into)?,
+                .map_err(IntoEthApiError::into_err)?,
             nonce,
             caller: from.unwrap_or_default(),
             gas_price,
             gas_priority_fee: max_priority_fee_per_gas,
             transact_to: to.unwrap_or(TxKind::Create),
             value: value.unwrap_or_default(),
-            data: input.try_into_unique_input().map_err(Into::into)?.unwrap_or_default(),
+            data: input
+                .try_into_unique_input()
+                .map_err(IntoEthApiError::into_err)?
+                .unwrap_or_default(),
             chain_id,
             access_list: access_list.unwrap_or_default().into(),
             // EIP-4844 fields
