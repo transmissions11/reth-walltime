@@ -34,22 +34,22 @@ jobs:
         configs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-20.04
-            profile: maxperf
+            profile: profiling
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-20.04
-            profile: maxperf
-          - target: x86_64-apple-darwin
-            os: macos-13
-            profile: maxperf
-          - target: aarch64-apple-darwin
-            os: macos-14
-            profile: maxperf
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-20.04
-            profile: maxperf
+            profile: profiling
+          # - target: x86_64-apple-darwin
+          #   os: macos-13
+          #   profile: profiling
+          # - target: aarch64-apple-darwin
+          #   os: macos-14
+          #   profile: profiling
+          # - target: x86_64-pc-windows-gnu
+          #   os: ubuntu-20.04
+          #   profile: profiling
         build:
-          - command: build
-            binary: reth
+          # - command: build
+          #   binary: reth
           - command: op-build
             binary: op-reth
     steps:
