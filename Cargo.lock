@@ -6670,8 +6670,8 @@ name = "reth-consensus"
 version = "1.0.5"
 dependencies = [
  "auto_impl",
+ "derive_more",
  "reth-primitives",
- "thiserror-no-std",
 ]
 
 [[package]]
@@ -7309,12 +7309,12 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",
+ "derive_more",
  "nybbles",
  "reth-consensus",
  "reth-prune-types",
  "reth-storage-errors",
  "revm-primitives",
- "thiserror-no-std",
 ]
 
 [[package]]
@@ -7589,6 +7589,7 @@ name = "reth-network-p2p"
 version = "1.0.5"
 dependencies = [
  "auto_impl",
+ "derive_more",
  "futures",
  "parking_lot 0.12.3",
  "reth-consensus",
@@ -7597,7 +7598,6 @@ dependencies = [
  "reth-primitives",
  "reth-storage-errors",
  "serde",
- "thiserror",
  "tokio",
  "tracing",
 ]
@@ -8133,13 +8133,13 @@ dependencies = [
 name = "reth-provider"
 version = "1.0.5"
 dependencies = [
- "alloy-rlp",
  "alloy-rpc-types-engine",
  "assert_matches",
  "auto_impl",
  "dashmap 6.0.1",
  "itertools 0.13.0",
  "metrics",
+ "once_cell",
  "parking_lot 0.12.3",
  "rand 0.8.5",
  "rayon",
@@ -8682,9 +8682,9 @@ name = "reth-storage-errors"
 version = "1.0.5"
 dependencies = [
  "alloy-rlp",
+ "derive_more",
  "reth-fs-util",
  "reth-primitives",
- "thiserror-no-std",
 ]
 
 [[package]]
